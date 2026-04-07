@@ -1,0 +1,140 @@
+#!/bin/sh
+
+if [ "$DEBUG" = "yes" ]; then
+	echo "debugging enabled"
+fi
+
+POOL=$(zfs list | grep -v NAME | grep -v '/' | awk '{print $1}' | head -n 1)
+
+progusage () {
+	echo "usage: $0 [on|off|info]"
+	exit 99
+}
+
+ismade () {
+	if test -e /dev/zvol/$POOL/buildswap; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+isadded () {
+	x=$(swapinfo -h | grep buildswap | awk '{print $1}')
+	if [ "$x" != "" ]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+issetup () {
+	if ismade; then
+		if isadded; then
+			return 0
+		else
+			return 1
+		fi
+	else
+		return 1
+	fi
+}
+
+makeimage () {
+	echo "making zfs swap volume"
+	zfs create -V 28G \
+		-o compression=off \
+		-o checksum=off \
+		-o sync=always \
+		-o redundant_metadata=most \
+		-o primarycache=none \
+		-o secondarycache=none \
+		-o logbias=throughput \
+		$POOL/buildswap
+}
+
+destroyimage () {
+	echo "destroying zfs swap volume"
+	zfs destroy $POOL/buildswap
+}
+
+addswap () {
+	echo "adding zfs volume to swap"
+	swapon /dev/zvol/$POOL/buildswap
+}
+
+removeswap () {
+	echo "removing zfs volume from swap"
+	swapoff /dev/zvol/$POOL/buildswap
+}
+
+if [ "$#" = "0" ]; then
+	progusage
+fi
+
+uid=$(id -u)
+if [ "$uid" != "0" ]; then
+	echo "please run as root"
+	exit 127
+fi
+
+if [ "$1" = "on" ]; then
+	echo "turning on"
+	issetup
+	s=$?
+	if [ "$s" = "0" ]; then
+		echo "nothing to do"
+		exit 0
+	fi
+
+	ismade
+	s=$?
+	if [ "$s" = "1" ]; then
+		makeimage
+	else
+		echo "volume already made"
+	fi
+
+	isadded
+	s=$?
+	if [ "$s" = "1" ]; then
+		addswap
+	else
+		echo "volume already added"
+	fi
+	exit 0
+elif [ "$1" = "off" ]; then
+	issetup
+	s=$?
+	if [ "$s" = "1" ]; then
+		echo "nothing to do"
+		exit 0
+	fi
+
+	if isadded; then
+		removeswap
+	fi
+
+	if ismade; then
+		destroyimage
+	fi
+	exit 0
+elif [ "$1" = "info" ]; then
+	if issetup; then
+		echo "build swap enabled"
+		pstat -sh
+		exit 0
+	else
+		if ismade; then
+			echo "zfs volume made"
+		fi
+		if isadded; then
+			echo "zfs volume added to swap"
+		fi
+		echo "build swap not enabled"
+	fi
+	exit 1
+else
+	progusage
+fi
+

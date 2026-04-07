@@ -1,0 +1,50 @@
+#!/bin/sh
+#
+# Copyright 2024, Matthew Veety, under the 3-Clause BSD License
+#
+# zfs-df -- wrapper around zfs list
+# -ds   - shows only datasets
+# -fs   - shows only filesystems
+# -snap - shows only snapshots
+# -vol  - shows only volumes
+# none  - shows everything
+# all other arguments are passed to zfs list
+# -remote will ssh to the host and run zfs-df with the rest of the args
+
+usage() {
+	PROGNAME=$(basename $0)
+	echo "usage: $PROGNAME [-ds | -fs | -snap | -vol] [zfs-list args...]"
+	echo "       $PROGNAME -remote host [zfs-df args...]"
+	exit 1
+}
+
+if [ "$1" = "-h" ]; then
+	usage
+elif [ "$1" = "-remote" ]; then
+	if [ $# -ge 2 ]; then
+		HOST=$2
+		shift; shift
+		ssh $HOST zfs-df $*
+	else
+		usage
+	fi
+elif [ "$1" = "-ds" ]; then
+	shift
+	zfs list -o name,avail,used,logicalused,ratio,usedsnap,usedchild \
+		-t filesystem,volume $*
+elif [ "$1" = "-fs" ]; then
+	shift
+	zfs list -o name,avail,used,logicalused,ratio,usedsnap,usedchild \
+		-t filesystem $*
+elif [ "$1" = "-snap" ]; then
+	shift
+	zfs list -o name,used,referenced,logicalreferenced,ratio \
+		-t snapshot $*
+elif [ "$1" = "-vol" ]; then
+	shift
+	zfs list -o name,avail,volsize,used,logicalused,ratio,refreservation,usedsnap \
+		-t volume $*
+else
+	zfs list -o name,avail,used,logicalused,ratio,usedsnap,usedchild $*
+fi
+

@@ -1,0 +1,85 @@
+#!/usr/bin/env es
+# vi: ft=es
+
+# requires es-mveety (https://github.com/mveety/es)
+
+if {~ $#buildstring 0} {
+	throw error zfssnap 'requires es-mveety'
+}
+
+if {! ~ <={@ a {result $a(1)} <={%split ' ' $buildstring}} 'es-mveety'} {
+	throw error zfssnap 'requires es-mveety'
+}
+
+fn print-usage dollar0 {
+	echo >[1=2] 'usage: '^$dollar0^' [-rn] [-s snapname] -d dataset'
+}
+
+fn check-dataset dataset _ {
+	result `{zfs list -H $dataset >[2=1] >/dev/null}
+}
+
+fn runcmd neuter cmd {
+	if {$neuter} {
+		echo >[1=2] $^cmd
+	} {
+		$cmd
+	}
+}
+
+fn zfssnap-main dollar0 args {
+	let (
+		dollar0 = `{basename $dollar0}
+		dataset = ()
+		snapshot_name = `{date -u '+%Y-%m-%dT%H:%M:%S'}
+		neuter = false
+		showhelp = false
+		snapshot = ''
+		cmd = ('zfs' 'snapshot')
+	) {
+		(_ _ restargs) = <={parseargs @ arg {
+			match $arg (
+				* { usage }
+				(-h) { showhelp = true; usage }
+				(-n) { neuter = true }
+				(-r) {
+					if {~ <={%last $cmd} '-r'} {
+						usage
+					}
+					cmd += '-r'
+				}
+				(-d) { dataset = $flagarg }
+				(-s) { snapshot_name = $flagarg }
+			)
+		} @{
+			if {! $showhelp} {
+				echo >[1=2] 'error: unknown argument'
+			}
+		
+			print-usage $dollar0
+		
+			if {$showhelp} {
+				exit 0
+			}
+			exit 1
+		} $*}
+
+		if {~ $#dataset 0} {
+			echo >[1=2] 'error: missing dataset'
+			print-usage $dollar0
+			exit 1
+		}
+
+		if {! check-dataset $dataset} {
+			echo >[1=2] 'error: dataset "'^$dataset^'" does not exist'
+			exit 2
+		}
+
+		snapshot = $dataset^'@'^$snapshot_name
+
+		runcmd $neuter $cmd $snapshot
+	}
+}
+
+zfssnap-main $0 $*
+
